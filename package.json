@@ -1,0 +1,24 @@
+{
+  "name": "clubside-utils",
+  "version": "1.0.0",
+  "description": "A collection of utilities for modifying strings.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test-slugify.js & node test-smartify.js & node test-numToWords.js",
+    "test-slugify": "node test-slugify.js",
+    "test-smartify": "node test-smartify.js",
+    "test-numToWords": "node test-numToWords.js"
+  },
+  "keywords": [
+    "slugify",
+    "slugs",
+    "slug",
+    "smartify",
+    "smart quotes",
+    "smart punctuation",
+    "number to words"
+  ],
+  "author": "Chris Rowley",
+  "license": "MIT"
+}
