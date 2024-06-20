@@ -2156,6 +2156,11 @@ const smartifyProcess = (string) => {
 				stringPosition = match.index + match[0].length
 				match = myregexp.exec(smartifyLine)
 			}
+			// console.log(returnString)
+			if (stringPosition < smartifyLine.length) {
+				// console.log('There is more', stringPosition, smartifyLine.length)
+				returnString += smartifyString(smartifyLine.substring(stringPosition, smartifyLine.length))
+			}
 			smartifyResult.push(returnString)
 		}
 	}
