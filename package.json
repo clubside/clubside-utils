@@ -1,14 +1,16 @@
 {
   "name": "clubside-utils",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A collection of utilities for modifying strings.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node test-slugify.js & node test-smartify.js & node test-numToWords.js",
+    "test": "node test-slugify.js & node test-smartify.js & node test-numToWords.js & node test-removeIndent.js & node test-addIndent.js",
     "test-slugify": "node test-slugify.js",
     "test-smartify": "node test-smartify.js",
-    "test-numToWords": "node test-numToWords.js"
+    "test-numToWords": "node test-numToWords.js",
+    "test-removeIndent": "node test-removeIndent.js",
+    "test-addIndent": "node test-addIndent.js"
   },
   "keywords": [
     "slugify",
@@ -19,6 +21,10 @@
     "smart punctuation",
     "number to words"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/clubside-utils.git"
+  },
   "author": "Chris Rowley",
   "license": "MIT"
 }

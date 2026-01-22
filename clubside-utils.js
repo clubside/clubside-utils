@@ -1,6 +1,7 @@
 'use strict'
 
 const slugifyReplacements = [
+	['+', ' plus '],
 	['&', ' and '],
 	['@', ' at '],
 	['/', 'slash']
@@ -1160,7 +1161,7 @@ const languageReplacements = [
 	['𝕂', 'K'],
 	['𝕃', 'L'],
 	['𝕄', 'M'],
-	['𝕆', 'N'],
+	['𝕆', 'O'],
 	['𝕊', 'S'],
 	['𝕋', 'T'],
 	['𝕌', 'U'],
@@ -1799,8 +1800,8 @@ const languageReplacements = [
 	['Ⓩ', '(Z)'],
 	['ⓐ', '(a)'],
 	['ⓑ', '(b)'],
-	['ⓒ', '(b)'],
-	['ⓓ', '(c)'],
+	['ⓒ', '(c)'],
+	['ⓓ', '(d)'],
 	['ⓔ', '(e)'],
 	['ⓕ', '(f)'],
 	['ⓖ', '(g)'],
@@ -2061,18 +2062,22 @@ const languageReplacements = [
 	['🆉', 'Z']
 ]
 
+function normalizePairs(arr) {
+	return arr.map(entry => Array.isArray(entry) ? entry : [entry.match, entry.replace])
+}
+
 /**
  * Creates a slug based on a string. A slug is defined as a lower-case string with spaces converted
  * to hyphens, '&' to 'and', '@' to 'at' and '/' to 'slash'. All other punctuation is converted to
  * a hyphen. Repeat hyphens are consdensed into a single hyphen. Extra replacement patterns can
- * be passed.
+ * be passed. Updated with advice from Microsoft Copilot.
  *
  * Based on original by Sindre Sorhus https://github.com/sindresorhus/slugify
  *
- * @version 1.0.0
+ * @version 1.2.0
  * @author Chris Rowley
  * @license MIT
- * @date 19 Jun 2024
+ * @date 20 Jan 2026
  * @param {string} string - string to slugify
  * @param {Array<Array<{match: string, replace: String}>>} [extraReplacements] - array of extra replacement patterns
  * @returns {string} The slugified string
@@ -2085,150 +2090,337 @@ exports.slugify = (string, extraReplacements = []) => {
 	const customReplacements = new Map([
 		...slugifyReplacements,
 		...languageReplacements,
-		...extraReplacements
+		...normalizePairs(extraReplacements)
 	])
 
+	// Normalize Unicode
 	string = string.normalize()
+
+	// Apply custom replacements
 	for (const [key, value] of customReplacements) {
 		string = string.replaceAll(key, value)
 	}
-	string = string.normalize('NFD').replace(/\p{Diacritic}/gu, '').normalize()
 
+	// Strip diacritics
+	string = string
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.normalize()
+
+	// Lowercase
 	string = string.toLowerCase()
 
-	// Detect contractions/possessives by looking for any word followed by a `'t`
-	// or `'s` in isolation and then remove it.
-	string = string.replace(/([a-zA-Z\d]+)'([ts])(\s|$)/g, '$1$2$3')
+	// Remove simple contractions
+	string = string.replace(/([a-z\d]+)'([ts])(\s|$)/g, '$1$2$3')
 
+	// Replace non-alphanumerics with hyphens
 	string = string.replace(/[^a-z\d]+/g, '-')
+
+	// Remove backslashes
 	string = string.replace(/\\/g, '')
 
+	// Collapse multiple hyphens
 	string = string.replace(/-{2,}/g, '-')
+
+	// Trim hyphens
 	string = string.replace(/^-|-$/g, '')
 
 	return string
 }
 
-const smartifyString = (string) => {
+const smartifyString = (string, options = {}) => {
 	if (typeof string !== 'string') {
 		throw new TypeError(`Expected a string, got \`${typeof string}\``)
 	}
 
-	string = string.replace(/^"| "/img, (match) => {
-		return match.replace('"', '“')
-	})
-	string = string.replaceAll('"', '”')
-	string = string.replace(/^'| '/img, (match) => {
-		return match.replace("'", '‘')
-	})
-	string = string.replaceAll("'", '’')
-	string = string.replaceAll('...', '…')
-	string = string.replaceAll('--', '—')
-	string = string.replaceAll('- ', '–')
+	const hyphens = options.hyphens !== false
 
-	// console.log({ string })
+	// Opening double quotes: start of line OR whitespace OR ( [ { >
+	string = string.replace(/(^|[\s([{>])"/g, (match, prefix) => {
+		return `${prefix}“`
+	})
+
+	// Closing double quotes
+	string = string.replace(/"/g, '”')
+
+	// Opening single quotes: start of line OR whitespace OR ( [ { >
+	string = string.replace(/(^|[\s([{>])'/g, (match, prefix) => {
+		return `${prefix}‘`
+	})
+
+	// Closing single quotes
+	string = string.replace(/'/g, '’')
+
+	// Ellipsis
+	string = string.replace(/\.{3}/g, '…')
+
+	// Dashes (optional)
+	if (hyphens) {
+		// --- → em dash
+		string = string.replace(/---/g, '—')
+
+		// -- → em dash (common typist usage)
+		string = string.replace(/--/g, '—')
+
+		// numeric ranges → en dash
+		string = string.replace(/(\d)\s*-\s*(\d)/g, '$1–$2')
+
+		// space-hyphen-space → en dash
+		string = string.replace(/\s-\s/g, ' – ')
+
+		// hyphen between words → en dash
+		string = string.replace(/(\w)-(\w)/g, '$1–$2')
+	}
 
 	return string
 }
 
-const smartifyProcess = (string) => {
+const smartifyProcess = (string, options = {}) => {
 	const smartifyLines = string.split('\n')
-	// console.log(smartifyLines)
 	const smartifyResult = []
+	const tagRegex = /<\S.*?>/ig
+
 	for (const smartifyLine of smartifyLines) {
-		// console.log({ smartifyLine })
-		const myregexp = /<.*?>/ig
 		let stringPosition = 0
 		let returnString = ''
-		let match = myregexp.exec(smartifyLine)
+		let match = tagRegex.exec(smartifyLine)
+
 		if (match === null) {
-			// console.log({ action: 'no match' })
-			smartifyResult.push(smartifyString(smartifyLine))
+			smartifyResult.push(smartifyString(smartifyLine, options))
 		} else {
 			while (match !== null) {
-				// matched text: match[0]
-				// match start: match.index
-				// capturing group n: match[n]
 				if (match.index > stringPosition) {
-					returnString += smartifyString(smartifyLine.substring(stringPosition, match.index))
+					returnString += smartifyString(
+						smartifyLine.substring(stringPosition, match.index),
+						options
+					)
 				}
 				returnString += smartifyLine.substring(match.index, match.index + match[0].length)
 				stringPosition = match.index + match[0].length
-				match = myregexp.exec(smartifyLine)
+				match = tagRegex.exec(smartifyLine)
 			}
-			// console.log(returnString)
+
 			if (stringPosition < smartifyLine.length) {
-				// console.log('There is more', stringPosition, smartifyLine.length)
-				returnString += smartifyString(smartifyLine.substring(stringPosition, smartifyLine.length))
+				returnString += smartifyString(
+					smartifyLine.substring(stringPosition),
+					options
+				)
 			}
+
 			smartifyResult.push(returnString)
 		}
 	}
+
 	return smartifyResult.join('\n')
 }
 
 /**
  * Converts quotes to smart quotes, double-hyphen to em-dash, hyphen followed by a space to en-dash
- * and three consectutive periods to an ellipsis. Excludes text within HTML tags.
+ * and three consectutive periods to an ellipsis. Excludes text within HTML tags. Updated with advice
+ * from Microsoft Copilot.
  *
- * @version 1.0.0
+ * @version 1.1.0
  * @author Chris Rowley
  * @license MIT
- * @date 19 Jun 2024
+ * @date 20 Jan 2026
  * @param {string} string - string to smartify
+ * @param {Object} [options] - options for the smartify process
+ * @param {boolean} [options.hyphens] - whether or not to skip hyphens for issues like HTML <title>
  * @returns {string} The smartified string
  */
-exports.smartify = (string) => {
-	return smartifyProcess(string)
+exports.smartify = (string, options = {}) => {
+	return smartifyProcess(string, options)
 }
 
+// Shared constants
+const T10s = [
+	'', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+	'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+	'Seventeen', 'Eighteen', 'Nineteen'
+]
+
+const T20s = [
+	'', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'
+]
+
+const SCALE_WORDS = [
+	'', 'Thousand', 'Million', 'Billion', 'Trillion', 'Quadrillion'
+]
+
 function handleNumToWords(num, separators) {
-	if (num === 0) return 'Zero'
-	let positiveNum = String(num)
+	if (num === 0 || num === '0') return 'Zero'
+
+	let str = String(num)
 	let negative = false
 	let decimal = null
-	let out = ''
-	if (positiveNum[0] === '-') {
-		positiveNum = positiveNum.substring(1)
+
+	// Handle negative numbers
+	if (str[0] === '-') {
 		negative = true
+		str = str.substring(1)
 	}
-	if (positiveNum.includes('.')) {
-		const decimalPoint = positiveNum.indexOf('.')
-		decimal = positiveNum.substring(decimalPoint + 1)
-		positiveNum = positiveNum.substring(0, decimalPoint)
+
+	// Handle decimals
+	if (str.includes('.')) {
+		const idx = str.indexOf('.')
+		decimal = str.substring(idx + 1)
+		str = str.substring(0, idx)
 	}
-	positiveNum = ('0'.repeat(2 * (positiveNum += '').length % 3) + positiveNum).match(/.{3}/g)
-	const T10s = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
-	const T20s = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
-	const sclT = ['', 'Thousand', 'Million', 'Billion', 'Trillion', 'Quadrillion']
-	positiveNum.forEach((n, i) => {
-		if (+n) {
-			const hund = +n[0]; const ten = +n.substring(1); const scl = sclT[positiveNum.length - i - 1]
-			out += (out ? separators ? ', ' : ' ' : '') + (hund ? T10s[hund] + ' Hundred' : '') + (hund && ten ? separators ? ' and ' : ' ' : '') + (ten < 20 ? T10s[ten] : T20s[+n[1]] + (+n[2] ? '-' : '') + T10s[+n[2]])
-			out += (out && scl ? ' ' : '') + scl
+
+	// Pad to groups of 3
+	str = String(str)
+	const padLength = (3 - (str.length % 3)) % 3
+	const padded = '0'.repeat(padLength) + str
+	const groups = padded.match(/.{3}/g)
+
+	let out = ''
+
+	groups.forEach((group, i) => {
+		const n = Number(group)
+		if (!n) return
+
+		const hundreds = Math.floor(n / 100)
+		const tens = n % 100
+		const ones = n % 10
+		const scale = SCALE_WORDS[groups.length - i - 1]
+
+		// Add separator before this group if needed
+		if (out) out += separators ? ', ' : ' '
+
+		// Hundreds
+		if (hundreds) {
+			out += `${T10s[hundreds]} Hundred`
+			if (tens) out += separators ? ' and ' : ' '
 		}
+
+		// Tens + Ones
+		if (tens < 20) {
+			out += T10s[tens]
+		} else {
+			out += T20s[Math.floor(tens / 10)]
+			if (ones) out += `-${T10s[ones]}`
+		}
+
+		// Scale word
+		if (scale) out += ` ${scale}`
 	})
+
+	// Decimal part
 	if (decimal) {
 		out += ` Point ${handleNumToWords(decimal, separators)}`
 	}
+
+	// Negative prefix
 	if (negative) {
 		out = `Negative ${out}`
 	}
+
 	return out
 }
 
 /**
- * Converts Numbers to Words, optionally grouped. Prepends 'Negative ' for negative numbers.
- * Based on original by Mohsen Alyafei https://stackoverflow.com/a/71276286/13646936
+ * Converts numbers to English words, optionally using commas and "and".
+ * Handles negatives, decimals, and large scale numbers. Updated with advice
+ * from Microsoft Copilot.
  *
- * @version 1.0.0
+ * @version 1.1.0
  * @author Chris Rowley
  * @license MIT
- * @date 19 Jun 2024
- * @param {number} num - numeric or string
- * @param {boolean} [separators] - whether or not to group words with commas and 'and'
- * @returns {string} The wordified number string
+ * @date 20 Jan 2026
+ * @param {number|string} num - numeric value or numeric string
+ * @param {boolean} [separators] - whether to include commas and "and"
+ * @returns {string} The number written out in words
  */
 exports.numToWords = (num, separators) => {
 	return handleNumToWords(num, separators)
+}
+
+/**
+ * Removes shared leading indentation from a block of text.
+ * If indentation uses spaces, remaining leading spaces are converted
+ * into tabs (4 spaces → 1 tab). Updated with advice from Microsoft Copilot.
+ *
+ * @version 1.1.0
+ * @author Chris Rowley
+ * @license MIT
+ * @date 20 Jan 2026
+ * @param {string} string - string to left-justify
+ * @returns {string}
+ */
+exports.removeIndent = (string) => {
+	const tabCharacter = '\t'
+	const lines = string.split('\n')
+
+	// Find first non-empty line
+	let firstLine = 0
+	while (firstLine < lines.length && lines[firstLine] === '') {
+		firstLine++
+	}
+
+	if (firstLine === lines.length) return string // all blank
+
+	const indentStyle = lines[firstLine][0]
+	let leadingCharacters = 0
+
+	// Count shared leading indent characters
+	while (lines[firstLine][leadingCharacters] === indentStyle) {
+		leadingCharacters++
+	}
+
+	if (leadingCharacters === 0) return string
+
+	const nonSpaceRegex = /\S/
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]
+		if (!line) continue
+
+		// Only adjust lines that start with whitespace
+		if (line[0] !== ' ' && line[0] !== '\t') continue
+
+		// Strip shared indent
+		let newLine = line.substring(leadingCharacters)
+
+		// If indent style was spaces, convert remaining leading spaces to tabs
+		if (indentStyle === ' ') {
+			const match = nonSpaceRegex.exec(newLine)
+
+			if (match && match.index > 0) {
+				const tabCount = Math.floor(match.index / 4)
+				newLine = tabCharacter.repeat(tabCount) + newLine.substring(match.index)
+			}
+		}
+
+		lines[i] = newLine
+	}
+
+	return lines.join('\n')
+}
+
+const TAB = '\t'
+
+/**
+ * Adds indentation to each line of a string.
+ * Prepends `tabCount` tab characters to every line.. Updated with advice from Microsoft Copilot.
+ *
+ * @version 1.1.0
+ * @author Chris Rowley
+ * @license MIT
+ * @date 20 Jan 2026
+ * @param {string} string - string to indent
+ * @param {number} tabCount - number of tabs to add at the beginning of each line
+ * @returns {string}
+ */
+exports.addIndent = (string, tabCount) => {
+	if (typeof string !== 'string') {
+		throw new TypeError(`Expected a string, got \`${typeof string}\``)
+	}
+
+	if (!tabCount) return string
+
+	const prefix = TAB.repeat(tabCount)
+	return string
+		.split('\n')
+		.map(line => prefix + line)
+		.join('\n')
 }
